@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html>
+<head>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<title>System Monitor Dashboard</title>
+
+<style>
+body {
+    font-family: Arial;
+    padding: 20px;
+    background-color: #f4f6f8;
+    transition: 0.3s;
+}
+
+.dark {
+    background-color: #121212;
+    color: white;
+}
+
+.dark table {
+    background-color: #1e1e1e;
+    color: white;
+}
+
+h1 { color: #2c3e50; }
+h2 { margin-top: 25px; }
+
+table {
+    border-collapse: collapse;
+    width: 100%;
+    background: white;
+}
+
+th, td {
+    border: 1px solid #ddd;
+    padding: 10px;
+    text-align: center;
+}
+
+th {
+    background-color: #2c3e50;
+    color: white;
+}
+
+button {
+    padding: 6px 12px;
+    border: none;
+    background-color: #3498db;
+    color: white;
+    cursor: pointer;
+    border-radius: 4px;
+}
+
+button:hover {
+    background-color: #2980b9;
+}
+
+
+input {
+    padding: 8px;
+    margin-bottom: 10px;
+    width: 200px;
+}
+</style>
+</head>
+
+<body>
+
+<h1>System Resource Monitor</h1>
+
+<button onclick="toggleDark()">Dark Mode</button>
+
+<h2>CPU Usage Graph</h2>
+<canvas id="cpuChart"></canvas>
+
+<h2>Memory Usage Graph</h2>
+<canvas id="memChart"></canvas>
+
+<h2>CPU Usage</h2>
+<p id="cpu">Loading...</p>
+
+<h2>Memory Usage</h2>
+<p id="memory">Loading...</p>
+
+<h2>Running Processes</h2>
+
+<input type="text" id="search" placeholder="Search process..." onkeyup="searchProcess()">
+
+<table>
+<thead>
+<tr>
+<th>PID</th>
+<th>Name</th>
+<th>CPU %</th>
+<th>Memory %</th>
+<th>Action</th>
+</tr>
+</thead>
+<tbody id="process-table"></tbody>
+</table>
+
+<script>
+// -------- GRAPHS SETUP --------
+let cpuHistory = [];
+let memHistory = [];
+let labels = [];
+
+const cpuChart = new Chart(document.getElementById('cpuChart'), {
+    type: 'line',
+    data: {
+        labels: labels,
+        datasets: [{
+            label: 'CPU %',
+            data: cpuHistory
+        }]
+    }
+});
+
+const memChart = new Chart(document.getElementById('memChart'), {
+    type: 'line',
+    data: {
+        labels: labels,
+        datasets: [{
+            label: 'Memory %',
+            data: memHistory
+        }]
+    }
+});
+
+// -------- FETCH DATA --------
+async function fetchData() {
+    const cpuRes = await fetch('/cpu');
+    const memRes = await fetch('/memory');
+    const procRes = await fetch('/processes');
+
+    const cpuData = await cpuRes.json();
+    const memData = await memRes.json();
+    const procData = await procRes.json();
+
+    let cpu = cpuData.cpu_usage;
+    let memory = memData.memory_usage;
+
+    document.getElementById('cpu').innerText = cpu + '%';
+    document.getElementById('memory').innerText = memory + '%';
+
+    // ---- Update Graphs ----
+    labels.push(new Date().toLocaleTimeString());
+    cpuHistory.push(cpu);
+    memHistory.push(memory);
+
+    if (labels.length > 10){
+        labels.shift();
+        cpuHistory.shift();
+        memHistory.shift();
+    }
+
+    cpuChart.update();
+    memChart.update();
+
+    // ---- Update Table ----
+    const table = document.getElementById('process-table');
+    table.innerHTML = '';
+
+    procData.forEach(proc => {
+        const row = document.createElement('tr');
+        row.innerHTML = `
+            <td>${proc.pid}</td>
+            <td>${proc.name}</td>
+            <td>${proc.cpu}</td>
+            <td>${proc.memory}</td>
+            <td><button onclick="killProcess(${proc.pid})">Kill</button></td>
+        `;
+        table.appendChild(row);
+    });
+}
+
+// -------- KILL PROCESS --------
+async function killProcess(pid) {
+    await fetch(`/kill/${pid}`, {method: "POST"});
+    fetchData();
+}
+
+// -------- DARK MODE --------
+function toggleDark(){
+    document.body.classList.toggle("dark");
+}
+
+// -------- SEARCH --------
+function searchProcess(){
+    let input = document.getElementById("search").value.toLowerCase();
+    let rows = document.querySelectorAll("#process-table tr");
+
+    rows.forEach(row => {
+        let text = row.innerText.toLowerCase();
+        row.style.display = text.includes(input) ? "" : "none";
+    });
+}
+
+// -------- AUTO REFRESH --------
+fetchData();
+setInterval(fetchData, 2000);
+
+</script>
+
+</body>
+</html>
